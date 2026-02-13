@@ -26,7 +26,7 @@ st.set_page_config(
 st.markdown("""
 <h1 style='text-align:center;'>🎓 RIT Admission Assistant</h1>
 <p style='text-align:center;color:gray;'>
-Official Admission & Fee Information Portal (RAG Powered)
+Official Admission & Fee Information Portal
 </p>
 """, unsafe_allow_html=True)
 
@@ -90,79 +90,31 @@ retriever = index.as_retriever(similarity_top_k=5)
 
 
 # =========================
-# MEMORY (Last 5 Messages)
-# =========================
-def build_chat_history(messages, limit=5):
-    history = messages[-limit:]
-    conversation = ""
-    for msg in history:
-        role = "User" if msg["role"] == "user" else "Assistant"
-        conversation += f"{role}: {msg['content']}\n"
-    return conversation
-
-
-# =========================
-# CLEAN CONTEXT
-# =========================
-def clean_context(text):
-    remove_words = [
-        "paragraph format",
-        "page",
-        "authorized signatory",
-        "signature",
-        "stamp",
-        "institute contact",
-        "phone",
-        "email",
-        "website",
-        "declaration",
-        "fees (₹)",
-        "total fees",
-        "sr. no.",
-        "description"
-    ]
-
-    lines = []
-    for line in text.split("\n"):
-        clean = line.strip()
-        if clean and not any(word in clean.lower() for word in remove_words):
-            lines.append(clean)
-
-    return "\n".join(lines)
-
-
-# =========================
-# CHAT SESSION STATE
+# SESSION STATE
 # =========================
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+if "user_name" not in st.session_state:
+    st.session_state.user_name = None
+
+
+# =========================
+# CHAT DISPLAY
+# =========================
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
+
+# =========================
+# CHAT INPUT
+# =========================
 query = st.chat_input("Ask your question...")
 
 if query:
 
     query_lower = query.lower().strip()
-
-    # ================= Casual Chat Handling =================
-    greetings = ["hi", "hello", "hii", "hey"]
-    confirm_words = ["yes", "yeah", "yup"]
-    thanks_words = ["thank", "thanks"]
-    ok_words = ["ok", "okay"]
-
-    if query_lower in greetings:
-        reply = "Hello 👋 How can I help you today?"
-    elif query_lower in confirm_words:
-        reply = "Sure 👍 Please tell me your question."
-    elif any(word in query_lower for word in thanks_words):
-        reply = "You're welcome 😊"
-    elif query_lower in ok_words:
-        reply = "Alright 👍 Let me know what you'd like to know."
-    else:
-        reply = None
 
     st.session_state.messages.append({"role": "user", "content": query})
 
@@ -171,40 +123,62 @@ if query:
 
     with st.chat_message("assistant"):
 
-        if reply:
-            st.markdown(reply)
+        # =========================
+        # NAME MEMORY
+        # =========================
+        if "my name is" in query_lower:
+            name = query.split("my name is")[-1].strip().capitalize()
+            st.session_state.user_name = name
+            reply = f"Nice to meet you, {name} 😊 How can I help you today?"
 
+        elif "what is my name" in query_lower or "tell me my name" in query_lower:
+            if st.session_state.user_name:
+                reply = f"Your name is {st.session_state.user_name} 😊"
+            else:
+                reply = "You haven’t told me your name yet."
+
+        # =========================
+        # NATURAL CHAT RESPONSES
+        # =========================
+        elif query_lower in ["hi", "hello", "hii", "hey"]:
+            reply = "Hello 👋 How can I help you today?"
+
+        elif query_lower in ["thanks", "thank you", "tnks", "thynks"]:
+            reply = "You're welcome 😊"
+
+        elif query_lower in ["ok", "okay", "sure", "nice"]:
+            reply = "Alright 👍 What would you like to know?"
+
+        elif "can i ask" in query_lower:
+            reply = "Of course 😊 Please go ahead."
+
+        # =========================
+        # DOCUMENT-BASED RESPONSE
+        # =========================
         else:
-            with st.spinner("Analyzing official documents..."):
+            with st.spinner("Searching official documents..."):
 
                 nodes = retriever.retrieve(query)
 
                 if nodes:
-                    retrieved_text = "\n\n".join([node.text for node in nodes])
-                    cleaned_context = clean_context(retrieved_text)
-                    chat_history = build_chat_history(st.session_state.messages)
+                    context = "\n\n".join([node.text for node in nodes])
 
                     prompt = f"""
 You are an official RIT Admission Assistant.
 
 STRICT RULES:
 - Answer ONLY from the provided context.
-- Do NOT add advisory notes.
-- Do NOT say "Based on the provided context".
+- Keep answers SHORT and clear.
+- Do NOT repeat unnecessary information.
+- Do NOT give advisory notes.
 - Do NOT add external knowledge.
-- Do NOT guess.
-- If information is not clearly available, respond ONLY with:
-  "I could not find this information in the official documents provided."
-- For cutoff answers, clearly mention Branch, Category, Round, and Marks in bullet format.
-- Provide clear, structured answers.
+- If not found, say:
+"I could not find this information in the official documents."
 
-Conversation History:
-{chat_history}
+Context:
+{context}
 
-Official Context:
-{cleaned_context}
-
-User Question:
+Question:
 {query}
 
 Answer:
@@ -214,9 +188,9 @@ Answer:
                     reply = response.text.strip()
 
                 else:
-                    reply = "I could not find this information in the official documents provided."
+                    reply = "I could not find this information in the official documents."
 
-            st.markdown(reply)
+        st.markdown(reply)
 
     st.session_state.messages.append(
         {"role": "assistant", "content": reply}
