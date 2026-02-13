@@ -17,13 +17,17 @@ from llama_index.readers.file import PyMuPDFReader
 # =========================
 # PAGE CONFIG
 # =========================
-st.set_page_config(page_title="RIT Admission Assistant", layout="centered")
+st.set_page_config(
+    page_title="RIT Admission Assistant",
+    layout="wide",
+    page_icon="🎓"
+)
 
 st.markdown("""
-    <h1 style='text-align: center;'>🎓 RIT Admission Assistant</h1>
-    <p style='text-align: center; color: gray;'>
-        Official Admission & Fee Information Portal (RAG Powered)
-    </p>
+<h1 style='text-align:center;'>🎓 RIT Admission Assistant</h1>
+<p style='text-align:center;color:gray;'>
+Official Admission & Fee Information Portal (RAG Powered)
+</p>
 """, unsafe_allow_html=True)
 
 st.divider()
@@ -53,7 +57,7 @@ llm = load_models()
 
 
 # =========================
-# LOAD / BUILD INDEX
+# LOAD INDEX
 # =========================
 def load_index():
     if os.path.exists("storage"):
@@ -86,21 +90,19 @@ retriever = index.as_retriever(similarity_top_k=5)
 
 
 # =========================
-# MEMORY FUNCTION (Last 5 Messages)
+# MEMORY FUNCTION
 # =========================
 def build_chat_history(messages, limit=5):
     history = messages[-limit:]
     conversation = ""
-
     for msg in history:
         role = "User" if msg["role"] == "user" else "Assistant"
         conversation += f"{role}: {msg['content']}\n"
-
     return conversation
 
 
 # =========================
-# CLEAN CONTEXT FUNCTION
+# CLEAN CONTEXT
 # =========================
 def clean_context(text):
     remove_words = [
@@ -143,19 +145,21 @@ query = st.chat_input("Ask your question...")
 
 if query:
 
-    # Handle casual messages immediately
-    casual_words = ["thank", "thanks", "ok", "okay", "hi", "hello"]
-    if any(word in query.lower() for word in casual_words):
-        reply = "You're welcome 😊 Let me know if you need any admission-related information."
-        st.session_state.messages.append({"role": "user", "content": query})
-        with st.chat_message("user"):
-            st.markdown(query)
+    query_lower = query.lower().strip()
 
-        with st.chat_message("assistant"):
-            st.markdown(reply)
+    # ================= Casual Chat Handling =================
+    greetings = ["hi", "hello", "hii", "hey"]
+    thanks_words = ["thank", "thanks"]
+    ok_words = ["ok", "okay"]
 
-        st.session_state.messages.append({"role": "assistant", "content": reply})
-        st.stop()
+    if query_lower in greetings:
+        reply = "Hello 👋 How can I help you with admission or fee information today?"
+    elif any(word in query_lower for word in thanks_words):
+        reply = "You're welcome 😊 If you have more questions, feel free to ask."
+    elif query_lower in ok_words:
+        reply = "Sure 👍 Let me know how I can assist you."
+    else:
+        reply = None
 
     st.session_state.messages.append({"role": "user", "content": query})
 
@@ -163,25 +167,28 @@ if query:
         st.markdown(query)
 
     with st.chat_message("assistant"):
-        with st.spinner("Fetching official information..."):
+        if reply:
+            st.markdown(reply)
+        else:
+            with st.spinner("Analyzing official documents..."):
 
-            nodes = retriever.retrieve(query)
+                nodes = retriever.retrieve(query)
 
-            if nodes:
-                retrieved_text = "\n\n".join([node.text for node in nodes])
-                cleaned_context = clean_context(retrieved_text)
+                if nodes:
+                    retrieved_text = "\n\n".join([node.text for node in nodes])
+                    cleaned_context = clean_context(retrieved_text)
+                    chat_history = build_chat_history(st.session_state.messages)
 
-                chat_history = build_chat_history(st.session_state.messages)
-
-                prompt = f"""
+                    prompt = f"""
 You are an official RIT Admission Assistant.
 
-IMPORTANT RULES:
+STRICT RULES:
 - Use ONLY the provided context.
 - Do NOT add external knowledge.
+- Do NOT guess or assume anything.
 - If answer is not clearly available, say:
-  "Information not available in official documents."
-- Provide neat, structured, well-formatted answers.
+  "I could not find this information in the official documents provided."
+- Provide clear, structured, professional responses.
 - Avoid mentioning page numbers, signatures, stamps, or website info.
 
 Conversation History:
@@ -196,14 +203,13 @@ User Question:
 Answer:
 """
 
-                response = llm.complete(prompt)
-                formatted_answer = response.text.strip()
+                    response = llm.complete(prompt)
+                    reply = response.text.strip()
+                else:
+                    reply = "I could not find this information in the official documents provided."
 
-            else:
-                formatted_answer = "Information not available in official documents."
-
-            st.markdown(formatted_answer)
+            st.markdown(reply)
 
     st.session_state.messages.append(
-        {"role": "assistant", "content": formatted_answer}
+        {"role": "assistant", "content": reply}
     )
