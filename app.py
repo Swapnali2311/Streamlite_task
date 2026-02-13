@@ -146,7 +146,7 @@ if query:
         elif query_lower in ["thanks", "thank you", "tnks", "thynks"]:
             reply = "You're welcome 😊"
 
-        elif query_lower in ["ok", "okay", "sure", "nice"]:
+        elif query_lower in ["ok", "okay", "sure", "nice","alright","great"]:
             reply = "Alright 👍 What would you like to know?"
 
         elif "can i ask" in query_lower:
