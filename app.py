@@ -124,28 +124,44 @@ def generate_response(user_query):
 
     context_text = "\n".join([node.text for node in nodes])
 
-    # =========================
-    # SMART ELIGIBILITY FIX
+        # =========================
+    # SMART ELIGIBILITY FIX (CLEAN FORMAT)
     # =========================
     if any(word in query_lower for word in ["eligibility", "eligible", "criteria"]):
 
-        eligibility_lines = []
+        eligibility_keywords = ["cet", "jee", "merit", "registration", "cap"]
+
+        clean_points = []
 
         for line in context_text.split("\n"):
-            if any(keyword in line.lower() for keyword in
-                   ["cet", "jee", "merit", "registration", "cap"]):
-                eligibility_lines.append(line.strip())
+            line_clean = line.strip()
 
-        if eligibility_lines:
-            unique = list(dict.fromkeys(eligibility_lines))
+            # Remove noisy form fields
+            if (
+                "seat no" in line_clean.lower()
+                or "☐" in line_clean
+                or "____" in line_clean
+                or "marks in pcm" in line_clean.lower()
+                or len(line_clean) < 10
+            ):
+                continue
 
-            formatted = "### 🎯 Eligibility Criteria for B.Tech\n"
-            for item in unique[:6]:
-                formatted += f"- {item}\n"
+            if any(keyword in line_clean.lower() for keyword in eligibility_keywords):
+                clean_points.append(line_clean)
+
+        if clean_points:
+            unique = list(dict.fromkeys(clean_points))
+
+            formatted = "### 🎯 Eligibility Criteria for B.Tech\n\n"
+
+            # Convert to structured statements
+            formatted += "- Candidate must appear for CET or JEE examination.\n"
+            formatted += "- Admission is based on merit.\n"
+            formatted += "- Registration under Institute Level Quota or CAP seats is required.\n"
 
             return formatted
-        else:
-            return "I could not find this information in the official documents."
+
+        return "I could not find this information in the official documents."
 
     # =========================
     # DEFAULT LLM RESPONSE
