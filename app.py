@@ -152,7 +152,7 @@ def generate_response(user_query):
         if clean_points:
             unique = list(dict.fromkeys(clean_points))
 
-            formatted = "### 🎯 Eligibility Criteria for B.Tech\n\n"
+            formatted = "### Eligibility Criteria for B.Tech\n\n"
 
             # Convert to structured statements
             formatted += "- Candidate must appear for CET or JEE examination.\n"
