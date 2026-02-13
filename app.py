@@ -46,9 +46,10 @@ def load_models():
     )
 
     Settings.llm = llm
+    return llm
 
 
-load_models()
+llm = load_models()
 
 
 # =========================
@@ -85,17 +86,23 @@ retriever = index.as_retriever(similarity_top_k=5)
 
 
 # =========================
-# FORMAT ANSWER FUNCTION
+# MEMORY FUNCTION (Last 5 Messages)
 # =========================
-def format_answer(query, text):
+def build_chat_history(messages, limit=5):
+    history = messages[-limit:]
+    conversation = ""
 
-    query_lower = query.lower()
+    for msg in history:
+        role = "User" if msg["role"] == "user" else "Assistant"
+        conversation += f"{role}: {msg['content']}\n"
 
-    # Handle casual messages
-    casual_words = ["thank", "thanks", "ok", "okay", "hi", "hello"]
-    if any(word in query_lower for word in casual_words):
-        return "You're welcome 😊 Let me know if you need any admission-related information."
+    return conversation
 
+
+# =========================
+# CLEAN CONTEXT FUNCTION
+# =========================
+def clean_context(text):
     remove_words = [
         "paragraph format",
         "page",
@@ -119,75 +126,7 @@ def format_answer(query, text):
         if clean and not any(word in clean.lower() for word in remove_words):
             lines.append(clean)
 
-    # ========= REQUIRED DOCUMENTS =========
-    if "document" in query_lower:
-        docs = [
-            l for l in lines
-            if any(keyword in l.lower() for keyword in
-                   ["certificate", "mark", "score", "leaving"])
-        ]
-
-        unique_docs = list(dict.fromkeys(docs))
-
-        formatted = "### 📄 Required Documents\n"
-        for doc in unique_docs:
-            formatted += f"- {doc}\n"
-
-        return formatted
-
-
-    # ========= CUTOFF =========
-    if "cutoff" in query_lower or "cut off" in query_lower:
-
-        cutoff_lines = [
-            l for l in lines
-            if "computer engineering" in l.lower()
-        ]
-
-        unique_cutoff = list(dict.fromkeys(cutoff_lines))
-
-        formatted = "### 📊 Cutoff Information\n"
-        for c in unique_cutoff:
-            formatted += f"- {c}\n"
-
-        return formatted
-
-
-    # ========= FEE STRUCTURE =========
-    if "fee" in query_lower:
-
-        fee_lines = [
-            l for l in lines
-            if "₹" in l
-        ]
-
-        unique_fees = list(dict.fromkeys(fee_lines))
-
-        formatted = "### 💰 Fee Details\n"
-        for fee in unique_fees:
-            formatted += f"- {fee}\n"
-
-        return formatted
-
-
-    # ========= ADMISSION CRITERIA =========
-    if "criteria" in query_lower and "cut" not in query_lower:
-
-        criteria_lines = [
-            l for l in lines
-            if any(keyword in l.lower() for keyword in
-                   ["cet", "jee", "merit", "quota"])
-        ]
-
-        unique_criteria = list(dict.fromkeys(criteria_lines))
-
-        formatted = "### 🎯 Admission Criteria\n"
-        for c in unique_criteria:
-            formatted += f"- {c}\n"
-
-        return formatted
-
-    return "Information available in official documents."
+    return "\n".join(lines)
 
 
 # =========================
@@ -203,6 +142,21 @@ for message in st.session_state.messages:
 query = st.chat_input("Ask your question...")
 
 if query:
+
+    # Handle casual messages immediately
+    casual_words = ["thank", "thanks", "ok", "okay", "hi", "hello"]
+    if any(word in query.lower() for word in casual_words):
+        reply = "You're welcome 😊 Let me know if you need any admission-related information."
+        st.session_state.messages.append({"role": "user", "content": query})
+        with st.chat_message("user"):
+            st.markdown(query)
+
+        with st.chat_message("assistant"):
+            st.markdown(reply)
+
+        st.session_state.messages.append({"role": "assistant", "content": reply})
+        st.stop()
+
     st.session_state.messages.append({"role": "user", "content": query})
 
     with st.chat_message("user"):
@@ -210,10 +164,41 @@ if query:
 
     with st.chat_message("assistant"):
         with st.spinner("Fetching official information..."):
+
             nodes = retriever.retrieve(query)
 
             if nodes:
-                formatted_answer = format_answer(query, nodes[0].text)
+                retrieved_text = "\n\n".join([node.text for node in nodes])
+                cleaned_context = clean_context(retrieved_text)
+
+                chat_history = build_chat_history(st.session_state.messages)
+
+                prompt = f"""
+You are an official RIT Admission Assistant.
+
+IMPORTANT RULES:
+- Use ONLY the provided context.
+- Do NOT add external knowledge.
+- If answer is not clearly available, say:
+  "Information not available in official documents."
+- Provide neat, structured, well-formatted answers.
+- Avoid mentioning page numbers, signatures, stamps, or website info.
+
+Conversation History:
+{chat_history}
+
+Official Context:
+{cleaned_context}
+
+User Question:
+{query}
+
+Answer:
+"""
+
+                response = llm.complete(prompt)
+                formatted_answer = response.text.strip()
+
             else:
                 formatted_answer = "Information not available in official documents."
 
