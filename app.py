@@ -20,10 +20,10 @@ from llama_index.readers.file import PyMuPDFReader
 st.set_page_config(page_title="RIT Admission Assistant", layout="wide")
 
 st.markdown("""
-    <h1 style='text-align:center;'>🎓 RIT Admission Assistant</h1>
-    <p style='text-align:center; color:gray;'>
-        Official Admission & Fee Information Portal (RAG Powered)
-    </p>
+<h1 style='text-align:center;'>🎓 RIT Admission Assistant</h1>
+<p style='text-align:center;color:gray;'>
+Official Admission & Fee Information Portal (RAG Powered)
+</p>
 """, unsafe_allow_html=True)
 
 st.divider()
@@ -52,7 +52,7 @@ load_models()
 
 
 # =========================
-# LOAD / BUILD INDEX
+# LOAD INDEX
 # =========================
 def load_index():
     if os.path.exists("storage"):
@@ -81,77 +81,101 @@ def load_index():
 
 
 index = load_index()
-
-query_engine = index.as_query_engine(
-    similarity_top_k=5,
-    response_mode="compact"
-)
+retriever = index.as_retriever(similarity_top_k=5)
 
 
 # =========================
-# CHAT MEMORY (Last 5 Messages)
+# SESSION STATE
 # =========================
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+
+# =========================
+# CHAT MEMORY (last 5)
+# =========================
 def get_last_context():
     last_msgs = st.session_state.messages[-5:]
     context = ""
     for msg in last_msgs:
-        role = msg["role"]
-        content = msg["content"]
-        context += f"{role.upper()}: {content}\n"
+        context += f"{msg['role'].upper()}: {msg['content']}\n"
     return context
 
 
 # =========================
-# RESPONSE FORMATTER
+# GENERATE RESPONSE
 # =========================
 def generate_response(user_query):
 
     query_lower = user_query.lower()
 
     # Natural greetings
-    greetings = ["hi", "hello", "hii", "hey"]
-    if query_lower in greetings:
-        return "Hello 👋 How can I help you with admission or fee information today?"
+    if query_lower in ["hi", "hello", "hii", "hey"]:
+        return "Hello 👋 How can I help you today?"
 
-    casual = ["thanks", "thank you", "ok", "okay"]
-    if query_lower in casual:
-        return "You're welcome 😊 Let me know if you need any more information."
+    if query_lower in ["thanks", "thank you", "ok", "okay"]:
+        return "You're welcome 😊"
 
-    # Build context-aware prompt
+    # Retrieve context
+    nodes = retriever.retrieve(user_query)
+
+    if not nodes:
+        return "I could not find this information in the official documents."
+
+    context_text = "\n".join([node.text for node in nodes])
+
+    # =========================
+    # SMART ELIGIBILITY FIX
+    # =========================
+    if any(word in query_lower for word in ["eligibility", "eligible", "criteria"]):
+
+        eligibility_lines = []
+
+        for line in context_text.split("\n"):
+            if any(keyword in line.lower() for keyword in
+                   ["cet", "jee", "merit", "registration", "cap"]):
+                eligibility_lines.append(line.strip())
+
+        if eligibility_lines:
+            unique = list(dict.fromkeys(eligibility_lines))
+
+            formatted = "### 🎯 Eligibility Criteria for B.Tech\n"
+            for item in unique[:6]:
+                formatted += f"- {item}\n"
+
+            return formatted
+        else:
+            return "I could not find this information in the official documents."
+
+    # =========================
+    # DEFAULT LLM RESPONSE
+    # =========================
     chat_context = get_last_context()
 
-    strict_prompt = f"""
+    prompt = f"""
 You are an official admission assistant.
 
 Rules:
-1. Answer ONLY using the provided context.
-2. Do NOT assume or add extra information.
-3. If answer is not found, say:
-   "I could not find this information in the official documents."
-4. Keep response clear and structured.
-5. Avoid mentioning page numbers, signatures, stamps, website, or contact details.
+- Answer ONLY from the provided context.
+- Keep response short and structured.
+- Do NOT add extra information.
+- If not found, say:
+"I could not find this information in the official documents."
 
-Conversation context:
+Conversation:
 {chat_context}
 
-User Question:
+Context:
+{context_text}
+
+Question:
 {user_query}
+
+Answer:
 """
 
-    try:
-        response = query_engine.query(strict_prompt)
-        answer = str(response)
-
-        if not answer.strip():
-            return "I could not find this information in the official documents."
-
-        return answer
-
-    except:
-        return "I could not find this information in the official documents."
+    response = Settings.llm.complete(prompt)
+    return response.text.strip()
 
 
 # =========================
