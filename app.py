@@ -90,7 +90,7 @@ retriever = index.as_retriever(similarity_top_k=5)
 
 
 # =========================
-# MEMORY FUNCTION
+# MEMORY (Last 5 Messages)
 # =========================
 def build_chat_history(messages, limit=5):
     history = messages[-limit:]
@@ -132,7 +132,7 @@ def clean_context(text):
 
 
 # =========================
-# CHAT UI
+# CHAT SESSION STATE
 # =========================
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -149,15 +149,18 @@ if query:
 
     # ================= Casual Chat Handling =================
     greetings = ["hi", "hello", "hii", "hey"]
+    confirm_words = ["yes", "yeah", "yup"]
     thanks_words = ["thank", "thanks"]
     ok_words = ["ok", "okay"]
 
     if query_lower in greetings:
-        reply = "Hello 👋 How can I help you with admission or fee information today?"
+        reply = "Hello 👋 How can I help you today?"
+    elif query_lower in confirm_words:
+        reply = "Sure 👍 Please tell me your question."
     elif any(word in query_lower for word in thanks_words):
-        reply = "You're welcome 😊 If you have more questions, feel free to ask."
+        reply = "You're welcome 😊"
     elif query_lower in ok_words:
-        reply = "Sure 👍 Let me know how I can assist you."
+        reply = "Alright 👍 Let me know what you'd like to know."
     else:
         reply = None
 
@@ -167,8 +170,10 @@ if query:
         st.markdown(query)
 
     with st.chat_message("assistant"):
+
         if reply:
             st.markdown(reply)
+
         else:
             with st.spinner("Analyzing official documents..."):
 
@@ -183,13 +188,15 @@ if query:
 You are an official RIT Admission Assistant.
 
 STRICT RULES:
-- Use ONLY the provided context.
+- Answer ONLY from the provided context.
+- Do NOT add advisory notes.
+- Do NOT say "Based on the provided context".
 - Do NOT add external knowledge.
-- Do NOT guess or assume anything.
-- If answer is not clearly available, say:
+- Do NOT guess.
+- If information is not clearly available, respond ONLY with:
   "I could not find this information in the official documents provided."
-- Provide clear, structured, professional responses.
-- Avoid mentioning page numbers, signatures, stamps, or website info.
+- For cutoff answers, clearly mention Branch, Category, Round, and Marks in bullet format.
+- Provide clear, structured answers.
 
 Conversation History:
 {chat_history}
@@ -205,6 +212,7 @@ Answer:
 
                     response = llm.complete(prompt)
                     reply = response.text.strip()
+
                 else:
                     reply = "I could not find this information in the official documents provided."
 
