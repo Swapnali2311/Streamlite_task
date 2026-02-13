@@ -17,17 +17,13 @@ from llama_index.readers.file import PyMuPDFReader
 # =========================
 # PAGE CONFIG
 # =========================
-st.set_page_config(
-    page_title="RIT Admission Assistant",
-    layout="wide",
-    page_icon="🎓"
-)
+st.set_page_config(page_title="RIT Admission Assistant", layout="wide")
 
 st.markdown("""
-<h1 style='text-align:center;'>🎓 RIT Admission Assistant</h1>
-<p style='text-align:center;color:gray;'>
-Official Admission & Fee Information Portal
-</p>
+    <h1 style='text-align:center;'>🎓 RIT Admission Assistant</h1>
+    <p style='text-align:center; color:gray;'>
+        Official Admission & Fee Information Portal (RAG Powered)
+    </p>
 """, unsafe_allow_html=True)
 
 st.divider()
@@ -50,14 +46,13 @@ def load_models():
     )
 
     Settings.llm = llm
-    return llm
 
 
-llm = load_models()
+load_models()
 
 
 # =========================
-# LOAD INDEX
+# LOAD / BUILD INDEX
 # =========================
 def load_index():
     if os.path.exists("storage"):
@@ -86,111 +81,101 @@ def load_index():
 
 
 index = load_index()
-retriever = index.as_retriever(similarity_top_k=5)
+
+query_engine = index.as_query_engine(
+    similarity_top_k=5,
+    response_mode="compact"
+)
 
 
 # =========================
-# SESSION STATE
+# CHAT MEMORY (Last 5 Messages)
 # =========================
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-if "user_name" not in st.session_state:
-    st.session_state.user_name = None
+def get_last_context():
+    last_msgs = st.session_state.messages[-5:]
+    context = ""
+    for msg in last_msgs:
+        role = msg["role"]
+        content = msg["content"]
+        context += f"{role.upper()}: {content}\n"
+    return context
 
 
 # =========================
-# CHAT DISPLAY
+# RESPONSE FORMATTER
+# =========================
+def generate_response(user_query):
+
+    query_lower = user_query.lower()
+
+    # Natural greetings
+    greetings = ["hi", "hello", "hii", "hey"]
+    if query_lower in greetings:
+        return "Hello 👋 How can I help you with admission or fee information today?"
+
+    casual = ["thanks", "thank you", "ok", "okay"]
+    if query_lower in casual:
+        return "You're welcome 😊 Let me know if you need any more information."
+
+    # Build context-aware prompt
+    chat_context = get_last_context()
+
+    strict_prompt = f"""
+You are an official admission assistant.
+
+Rules:
+1. Answer ONLY using the provided context.
+2. Do NOT assume or add extra information.
+3. If answer is not found, say:
+   "I could not find this information in the official documents."
+4. Keep response clear and structured.
+5. Avoid mentioning page numbers, signatures, stamps, website, or contact details.
+
+Conversation context:
+{chat_context}
+
+User Question:
+{user_query}
+"""
+
+    try:
+        response = query_engine.query(strict_prompt)
+        answer = str(response)
+
+        if not answer.strip():
+            return "I could not find this information in the official documents."
+
+        return answer
+
+    except:
+        return "I could not find this information in the official documents."
+
+
+# =========================
+# CHAT UI
 # =========================
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
+user_input = st.chat_input("Ask your question...")
 
-# =========================
-# CHAT INPUT
-# =========================
-query = st.chat_input("Ask your question...")
+if user_input:
 
-if query:
-
-    query_lower = query.lower().strip()
-
-    st.session_state.messages.append({"role": "user", "content": query})
+    st.session_state.messages.append(
+        {"role": "user", "content": user_input}
+    )
 
     with st.chat_message("user"):
-        st.markdown(query)
+        st.markdown(user_input)
 
     with st.chat_message("assistant"):
-
-        # =========================
-        # NAME MEMORY
-        # =========================
-        if "my name is" in query_lower:
-            name = query.split("my name is")[-1].strip().capitalize()
-            st.session_state.user_name = name
-            reply = f"Nice to meet you, {name} 😊 How can I help you today?"
-
-        elif "what is my name" in query_lower or "tell me my name" in query_lower:
-            if st.session_state.user_name:
-                reply = f"Your name is {st.session_state.user_name} 😊"
-            else:
-                reply = "You haven’t told me your name yet."
-
-        # =========================
-        # NATURAL CHAT RESPONSES
-        # =========================
-        elif query_lower in ["hi", "hello", "hii", "hey"]:
-            reply = "Hello 👋 How can I help you today?"
-
-        elif query_lower in ["thanks", "thank you", "tnks", "thynks"]:
-            reply = "You're welcome 😊"
-
-        elif query_lower in ["ok", "okay", "sure", "nice","alright","great","good","awesome","cool","fine","perfect","ok great","ok nice"]:
-            reply = "Alright 👍 What would you like to know?"
-
-        elif "can i ask" in query_lower:
-            reply = "Of course 😊 Please go ahead."
-
-        # =========================
-        # DOCUMENT-BASED RESPONSE
-        # =========================
-        else:
-            with st.spinner("Searching official documents..."):
-
-                nodes = retriever.retrieve(query)
-
-                if nodes:
-                    context = "\n\n".join([node.text for node in nodes])
-
-                    prompt = f"""
-You are an official RIT Admission Assistant.
-
-STRICT RULES:
-- Answer ONLY from the provided context.
-- Keep answers SHORT and clear.
-- Do NOT repeat unnecessary information.
-- Do NOT give advisory notes.
-- Do NOT add external knowledge.
-- If not found, say:
-"I could not find this information in the official documents."
-
-Context:
-{context}
-
-Question:
-{query}
-
-Answer:
-"""
-
-                    response = llm.complete(prompt)
-                    reply = response.text.strip()
-
-                else:
-                    reply = "I could not find this information in the official documents."
-
-        st.markdown(reply)
+        with st.spinner("Fetching official information..."):
+            reply = generate_response(user_input)
+            st.markdown(reply)
 
     st.session_state.messages.append(
         {"role": "assistant", "content": reply}
