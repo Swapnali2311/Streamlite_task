@@ -113,11 +113,10 @@ def generate_response(user_query):
     # Natural Greetings
     # -------------------------
     if query_lower in ["hi", "hello", "hii", "hey"]:
-        return "Hello 👋 How can I help you regarding admissions?"
+        return "Hello How can I help you regarding admissions?"
 
-    if query_lower in ["thanks", "thank you", "ok", "okay"]:
-        return "You're welcome 😊"
-
+    if query_lower in ["thanks", "thank you", "ok", "okay", "great", "awesome"]:
+        return "You're welcome"
 
     # -------------------------
     # Retrieve Context
@@ -129,51 +128,27 @@ def generate_response(user_query):
 
     context_text = "\n".join([node.text for node in nodes])
 
-
     # =========================================================
-    # 🔥 SMART ELIGIBILITY HANDLING (Logic Based Answering)
+    # SMART ELIGIBILITY HANDLING
     # =========================================================
-    if any(word in query_lower for word in ["eligibility", "eligible", "apply", "can i", "admission"]):
+    eligibility_keywords = ["eligibility", "eligible", "criteria"]
 
-        eligibility_lines = []
+    if any(word in query_lower for word in eligibility_keywords):
 
-        for line in context_text.split("\n"):
-            line_clean = line.strip()
+        formatted = "### Eligibility Criteria for B.Tech\n\n"
+        formatted += "- Candidate must have completed 12th (HSC) with Physics, Chemistry and Mathematics.\n"
+        formatted += "- Admission is based on CET / JEE merit.\n"
+        formatted += "- Registration under CAP or Institute Level quota is required.\n"
 
-            if (
-                "seat no" in line_clean.lower()
-                or "☐" in line_clean
-                or "____" in line_clean
-                or len(line_clean) < 15
-            ):
-                continue
+        return formatted
 
-            if any(word in line_clean.lower() for word in 
-                   ["12th", "hsc", "pcm", "physics", "chemistry", "mathematics"]):
-                eligibility_lines.append(line_clean)
-
-        if eligibility_lines:
-
-            unique_lines = list(dict.fromkeys(eligibility_lines))
-
-            # 🔴 Special case: 10th pass query
-            if "10th" in query_lower:
-                return (
-                    "### Eligibility Status\n\n"
-                    "❌ You are not eligible for B.Tech admission.\n\n"
-                    "As per official criteria, candidate must have completed "
-                    "12th (HSC) with Physics, Chemistry and Mathematics.\n\n"
-                    "Please complete 12th standard before applying."
-                )
-
-            formatted = "### Eligibility Criteria for B.Tech\n\n"
-            for line in unique_lines[:3]:
-                formatted += f"- {line}\n"
-
-            return formatted
-
-        return "I could not find this information in the official documents."
-
+    # Special Case: 10th Pass
+    if "10th" in query_lower:
+        return (
+            "### Eligibility Status\n\n"
+            " You are not eligible for B.Tech admission.\n\n"
+            "Candidate must complete 12th (HSC) with PCM before applying."
+        )
 
     # =========================================================
     # DEFAULT LLM RESPONSE (STRICT RAG MODE)
