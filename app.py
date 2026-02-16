@@ -47,13 +47,13 @@ def load_models():
 
     Settings.llm = llm
 
-
 load_models()
 
 
 # =========================
 # LOAD INDEX
 # =========================
+@st.cache_resource
 def load_index():
     if os.path.exists("storage"):
         storage_context = StorageContext.from_defaults(persist_dir="storage")
@@ -68,7 +68,7 @@ def load_index():
                     reader.load_data(os.path.join("admission_docs", file))
                 )
 
-        splitter = SentenceSplitter(chunk_size=700, chunk_overlap=40)
+        splitter = SentenceSplitter(chunk_size=800, chunk_overlap=80)
 
         index = VectorStoreIndex.from_documents(
             documents,
@@ -81,7 +81,7 @@ def load_index():
 
 
 index = load_index()
-retriever = index.as_retriever(similarity_top_k=5)
+retriever = index.as_retriever(similarity_top_k=8)
 
 
 # =========================
@@ -92,7 +92,7 @@ if "messages" not in st.session_state:
 
 
 # =========================
-# CHAT MEMORY (last 5)
+# CHAT MEMORY (last 5 msgs)
 # =========================
 def get_last_context():
     last_msgs = st.session_state.messages[-5:]
@@ -103,20 +103,25 @@ def get_last_context():
 
 
 # =========================
-# GENERATE RESPONSE
+# RESPONSE GENERATION
 # =========================
 def generate_response(user_query):
 
     query_lower = user_query.lower()
 
-    # Natural greetings
+    # -------------------------
+    # Natural Greetings
+    # -------------------------
     if query_lower in ["hi", "hello", "hii", "hey"]:
-        return "Hello 👋 How can I help you today?"
+        return "Hello 👋 How can I help you regarding admissions?"
 
     if query_lower in ["thanks", "thank you", "ok", "okay"]:
         return "You're welcome 😊"
 
-    # Retrieve context
+
+    # -------------------------
+    # Retrieve Context
+    # -------------------------
     nodes = retriever.retrieve(user_query)
 
     if not nodes:
@@ -124,58 +129,66 @@ def generate_response(user_query):
 
     context_text = "\n".join([node.text for node in nodes])
 
-        # =========================
-    # SMART ELIGIBILITY FIX (CLEAN FORMAT)
-    # =========================
-    if any(word in query_lower for word in ["eligibility", "eligible", "criteria"]):
 
-        eligibility_keywords = ["cet", "jee", "merit", "registration", "cap"]
+    # =========================================================
+    # 🔥 SMART ELIGIBILITY HANDLING (Logic Based Answering)
+    # =========================================================
+    if any(word in query_lower for word in ["eligibility", "eligible", "apply", "can i", "admission"]):
 
-        clean_points = []
+        eligibility_lines = []
 
         for line in context_text.split("\n"):
             line_clean = line.strip()
 
-            # Remove noisy form fields
             if (
                 "seat no" in line_clean.lower()
                 or "☐" in line_clean
                 or "____" in line_clean
-                or "marks in pcm" in line_clean.lower()
-                or len(line_clean) < 10
+                or len(line_clean) < 15
             ):
                 continue
 
-            if any(keyword in line_clean.lower() for keyword in eligibility_keywords):
-                clean_points.append(line_clean)
+            if any(word in line_clean.lower() for word in 
+                   ["12th", "hsc", "pcm", "physics", "chemistry", "mathematics"]):
+                eligibility_lines.append(line_clean)
 
-        if clean_points:
-            unique = list(dict.fromkeys(clean_points))
+        if eligibility_lines:
+
+            unique_lines = list(dict.fromkeys(eligibility_lines))
+
+            # 🔴 Special case: 10th pass query
+            if "10th" in query_lower:
+                return (
+                    "### Eligibility Status\n\n"
+                    "❌ You are not eligible for B.Tech admission.\n\n"
+                    "As per official criteria, candidate must have completed "
+                    "12th (HSC) with Physics, Chemistry and Mathematics.\n\n"
+                    "Please complete 12th standard before applying."
+                )
 
             formatted = "### Eligibility Criteria for B.Tech\n\n"
-
-            # Convert to structured statements
-            formatted += "- Candidate must appear for CET or JEE examination.\n"
-            formatted += "- Admission is based on merit.\n"
-            formatted += "- Registration under Institute Level Quota or CAP seats is required.\n"
+            for line in unique_lines[:3]:
+                formatted += f"- {line}\n"
 
             return formatted
 
         return "I could not find this information in the official documents."
 
-    # =========================
-    # DEFAULT LLM RESPONSE
-    # =========================
+
+    # =========================================================
+    # DEFAULT LLM RESPONSE (STRICT RAG MODE)
+    # =========================================================
     chat_context = get_last_context()
 
     prompt = f"""
 You are an official admission assistant.
 
-Rules:
+Strict Rules:
 - Answer ONLY from the provided context.
-- Keep response short and structured.
+- Keep answer short and structured.
+- If qualification does not meet criteria, clearly say NOT ELIGIBLE.
 - Do NOT add extra information.
-- If not found, say:
+- If answer not found in context, say:
 "I could not find this information in the official documents."
 
 Conversation:
