@@ -90,9 +90,12 @@ retriever = index.as_retriever(similarity_top_k=8)
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+if "username" not in st.session_state:
+    st.session_state.username = None
+
 
 # =========================
-# CHAT MEMORY (last 5 msgs)
+# CHAT MEMORY
 # =========================
 def get_last_context():
     last_msgs = st.session_state.messages[-5:]
@@ -107,26 +110,38 @@ def get_last_context():
 # =========================
 def generate_response(user_query):
 
-    query_lower = user_query.lower()
+    query_lower = user_query.lower().strip()
 
     # -------------------------
-    # Natural Greetings
+    # Greeting + Name Handling
     # -------------------------
-    if query_lower in ["hi", "hello", "hii", "hey"]:
-        return "Hello How can I help you regarding admissions?"
+    if any(greet in query_lower for greet in ["hi", "hello", "hii", "hey"]):
 
+        if "i am" in query_lower:
+            name = query_lower.split("i am")[-1].strip().title()
+            st.session_state.username = name
+            return f"Hello {name} 👋 How can I help you regarding admissions?"
+
+        if st.session_state.username:
+            return f"Welcome back {st.session_state.username} 👋 How can I help you?"
+
+        return "Hello 👋 How can I help you regarding admissions?"
+
+    # -------------------------
+    # Thanks Handling
+    # -------------------------
     if query_lower in ["thanks", "thank you", "ok", "okay", "great", "awesome"]:
-        return "You're welcome"
-    
-    # If user introduces name
-    if "i am" in query_lower:
-        name = user_query.split("i am")[-1].strip().title()
-        return f"Hello {name}  How can I help you regarding admissions?"
-    
-    if "username" in st.session_state:
-        return f"Welcome back {st.session_state['username']} How can I help you?"
+        return "You're welcome 😊"
 
-    return "Hello  How can I help you regarding admissions?"
+    # -------------------------
+    # Special Case: 10th Pass
+    # -------------------------
+    if "10th" in query_lower:
+        return (
+            "### Eligibility Status\n\n"
+            "❌ You are not eligible for B.Tech admission.\n\n"
+            "Candidate must complete 12th (HSC) with Physics, Chemistry and Mathematics before applying."
+        )
 
     # -------------------------
     # Retrieve Context
@@ -138,31 +153,20 @@ def generate_response(user_query):
 
     context_text = "\n".join([node.text for node in nodes])
 
-    # =========================================================
-    # SMART ELIGIBILITY HANDLING
-    # =========================================================
-    eligibility_keywords = ["eligibility", "eligible", "criteria"]
-
-    if any(word in query_lower for word in eligibility_keywords):
-
-        formatted = "### Eligibility Criteria for B.Tech\n\n"
-        formatted += "- Candidate must have completed 12th (HSC) with Physics, Chemistry and Mathematics.\n"
-        formatted += "- Admission is based on CET / JEE merit.\n"
-        formatted += "- Registration under CAP or Institute Level quota is required.\n"
-
-        return formatted
-
-    # Special Case: 10th Pass
-    if "10th" in query_lower:
+    # -------------------------
+    # Eligibility Criteria
+    # -------------------------
+    if any(word in query_lower for word in ["eligibility", "criteria"]):
         return (
-            "### Eligibility Status\n\n"
-            " You are not eligible for B.Tech admission.\n\n"
-            "Candidate must complete 12th (HSC) with PCM before applying."
+            "### Eligibility Criteria for B.Tech\n\n"
+            "- Candidate must have completed 12th (HSC) with Physics, Chemistry and Mathematics.\n"
+            "- Admission is based on CET / JEE merit.\n"
+            "- Registration under CAP or Institute Level quota is required."
         )
 
-    # =========================================================
-    # DEFAULT LLM RESPONSE (STRICT RAG MODE)
-    # =========================================================
+    # -------------------------
+    # Default LLM (Strict RAG)
+    # -------------------------
     chat_context = get_last_context()
 
     prompt = f"""
@@ -171,7 +175,6 @@ You are an official admission assistant.
 Strict Rules:
 - Answer ONLY from the provided context.
 - Keep answer short and structured.
-- If qualification does not meet criteria, clearly say NOT ELIGIBLE.
 - Do NOT add extra information.
 - If answer not found in context, say:
 "I could not find this information in the official documents."
