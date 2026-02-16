@@ -120,18 +120,18 @@ def generate_response(user_query):
         if "i am" in query_lower:
             name = query_lower.split("i am")[-1].strip().title()
             st.session_state.username = name
-            return f"Hello {name} 👋 How can I help you regarding admissions?"
+            return f"Hello {name} How can I help you regarding admissions?"
 
         if st.session_state.username:
-            return f"Welcome back {st.session_state.username} 👋 How can I help you?"
+            return f"Welcome back {st.session_state.username} How can I help you?"
 
-        return "Hello 👋 How can I help you regarding admissions?"
+        return "Hello How can I help you regarding admissions?"
 
     # -------------------------
     # Thanks Handling
     # -------------------------
     if query_lower in ["thanks", "thank you", "ok", "okay", "great", "awesome"]:
-        return "You're welcome 😊"
+        return "You're welcome!"
 
     # -------------------------
     # Special Case: 10th Pass
@@ -139,7 +139,7 @@ def generate_response(user_query):
     if "10th" in query_lower:
         return (
             "### Eligibility Status\n\n"
-            "❌ You are not eligible for B.Tech admission.\n\n"
+            "You are not eligible for B.Tech admission.\n\n"
             "Candidate must complete 12th (HSC) with Physics, Chemistry and Mathematics before applying."
         )
 
