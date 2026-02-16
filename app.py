@@ -117,6 +117,16 @@ def generate_response(user_query):
 
     if query_lower in ["thanks", "thank you", "ok", "okay", "great", "awesome"]:
         return "You're welcome"
+    
+    # If user introduces name
+    if "i am" in query_lower:
+        name = user_query.split("i am")[-1].strip().title()
+        return f"Hello {name}  How can I help you regarding admissions?"
+    
+    if "username" in st.session_state:
+        return f"Welcome back {st.session_state['username']} How can I help you?"
+
+    return "Hello  How can I help you regarding admissions?"
 
     # -------------------------
     # Retrieve Context
